@@ -8,6 +8,10 @@ terraform {
       source  = "hashicorp/tls"
       version = "~> 4.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.0"
+    }
   }
 }
 
@@ -70,6 +74,59 @@ resource "aws_security_group" "todo-sg" {
   }
 }
 
+### Base de datos: solo acepta conexiones desde el Security Group de la EC2
+resource "aws_security_group" "db-sg" {
+  name   = "${var.project_name}-db-sg"
+  vpc_id = data.aws_vpc.default.id
+
+  ingress {
+    description     = "PostgreSQL desde la API"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.todo-sg.id]
+  }
+}
+
+resource "random_password" "db" {
+  length  = 24
+  special = false
+}
+
+resource "aws_db_instance" "db" {
+  identifier             = "${var.project_name}-db"
+  engine                 = "postgres"
+  instance_class         = var.db_instance_class
+  allocated_storage      = 20
+  db_name                = var.db_name
+  username               = var.db_username
+  password               = random_password.db.result
+  vpc_security_group_ids = [aws_security_group.db-sg.id]
+  publicly_accessible    = false
+  skip_final_snapshot    = true
+
+  tags = {
+    Name = "${var.project_name}-db"
+  }
+}
+
+### Credenciales en Secrets Manager para no hardcodearlas en la app
+resource "aws_secretsmanager_secret" "db" {
+  name                    = "${var.project_name}-db-credentials"
+  recovery_window_in_days = 0 // se borra de inmediato en destroy
+}
+
+resource "aws_secretsmanager_secret_version" "db" {
+  secret_id = aws_secretsmanager_secret.db.id
+  secret_string = jsonencode({
+    host     = aws_db_instance.db.address
+    port     = aws_db_instance.db.port
+    dbname   = var.db_name
+    username = var.db_username
+    password = random_password.db.result
+  })
+}
+
 resource "aws_instance" "server" {
   ami                         = data.aws_ami.ubuntu.id
   instance_type               = var.instance_type
@@ -77,12 +134,20 @@ resource "aws_instance" "server" {
   vpc_security_group_ids      = [aws_security_group.todo-sg.id]
   associate_public_ip_address = true
 
+  # Rol de IAM que permite a la EC2 leer el secreto (Learner Lab no deja crear roles)
+  iam_instance_profile = var.instance_profile
+
   # Clona el repo, instala dependencias y registra la app como servicio al boot
   user_data = templatefile("${path.module}/user_data.sh", {
-    repo_url = var.repo_url
-    app_port = var.app_port
+    repo_url       = var.repo_url
+    app_port       = var.app_port
+    region         = var.region
+    db_secret_name = aws_secretsmanager_secret.db.name
   })
   user_data_replace_on_change = true
+
+  # La app lee el secreto al arrancar, así que la base debe existir antes
+  depends_on = [aws_secretsmanager_secret_version.db]
 
   tags = {
     Name = "${var.project_name}-server"
