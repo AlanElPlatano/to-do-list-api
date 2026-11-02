@@ -1,0 +1,15 @@
+# Terraform: el state puede contener información sensible
+terraform.tfstate
+terraform.tfstate.backup
+*.tfstate.*
+.terraform/
+*.tfvars
+crash.log
+
+# Llaves SSH
+*.pem
+
+# Python
+__pycache__/
+.venv/
+venv/
