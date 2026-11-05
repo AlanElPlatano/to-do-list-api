@@ -1,0 +1,60 @@
+name: Deploy
+
+on:
+  release:
+    types: [published]
+  # Para volver a desplegar un release, por ejemplo después de recrear la infra
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release a desplegar (ej. v1.0.0)
+        required: true
+
+concurrency: deploy
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      EC2_HOST: ${{ secrets.EC2_HOST }}
+    steps:
+      - name: Verificar que la infraestructura exista
+        run: |
+          if [ -z "$EC2_HOST" ]; then
+            echo "::error::No existe el secret EC2_HOST. Corre primero el workflow 'Infra - Apply'."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Preparar la llave SSH
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$EC2_SSH_KEY" > ~/.ssh/ec2.pem
+          chmod 600 ~/.ssh/ec2.pem
+
+      - name: Descargar el release en la EC2 y reiniciar la app
+        run: |
+          ssh -i ~/.ssh/ec2.pem -o StrictHostKeyChecking=accept-new "ubuntu@$EC2_HOST" \
+            'bash -s' -- "$TAG" "$GITHUB_REPOSITORY" < scripts/deploy.sh
+
+      - name: Verificar que /version reporte el release
+        run: |
+          for i in $(seq 1 12); do
+            VERSION=$(curl -fs "http://$EC2_HOST:8000/version" | jq -r .version) || true
+            if [ "$VERSION" = "$TAG" ]; then
+              echo "Versión desplegada: $VERSION"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::La API reporta '$VERSION' en lugar de '$TAG'"
+          exit 1

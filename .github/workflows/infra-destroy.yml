@@ -1,0 +1,41 @@
+name: Infra - Destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Escribe "destroy" para confirmar'
+        required: true
+
+concurrency: terraform
+
+permissions:
+  contents: read
+
+jobs:
+  destroy:
+    if: inputs.confirm == 'destroy'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/terraform-setup
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+
+      - name: terraform destroy
+        run: terraform destroy -auto-approve -input=false
+
+      # Así el workflow de deploy no intenta conectarse a una EC2 que ya no existe
+      - name: Borrar IP y llave SSH de GitHub Secrets
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh secret delete EC2_HOST || true
+          gh secret delete EC2_SSH_KEY || true

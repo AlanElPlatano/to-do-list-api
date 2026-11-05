@@ -1,4 +1,12 @@
 terraform {
+  # El state vive en S3 para que los workflows de GitHub lo compartan.
+  # El bucket se pasa en `terraform init -backend-config="bucket=..."`
+  backend "s3" {
+    key          = "todo-api/terraform.tfstate"
+    region       = "us-east-1"
+    use_lockfile = true
+  }
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"

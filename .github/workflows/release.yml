@@ -1,0 +1,33 @@
+name: Release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Comprimir el repositorio en zip
+        run: |
+          NAME="to-do-list-api-$GITHUB_REF_NAME"
+          git archive --format=zip --prefix="$NAME/" -o "$NAME.zip" "$GITHUB_REF_NAME"
+
+      - name: Crear el release
+        env:
+          # Un release creado con GITHUB_TOKEN no dispara otros workflows,
+          # así que se usa el PAT para que corra el deploy
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "to-do-list-api-$GITHUB_REF_NAME.zip" \
+            --title "$GITHUB_REF_NAME" --generate-notes
