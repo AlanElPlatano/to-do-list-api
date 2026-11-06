@@ -29,8 +29,9 @@ def test_post_task_and_list_it(client):
     assert client.get("/tasks").get_json() == [response.get_json()]
 
 
-def test_post_task_without_title_is_rejected(client):
-    response = client.post("/tasks", json={"done": True})
+@pytest.mark.parametrize("payload", [{"done": True}, {"title": 123}, {"title": "   "}])
+def test_post_task_with_invalid_title_is_rejected(client, payload):
+    response = client.post("/tasks", json=payload)
 
     assert response.status_code == 400
     assert client.get("/tasks").get_json() == []

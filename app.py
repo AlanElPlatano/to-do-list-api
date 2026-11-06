@@ -22,10 +22,10 @@ def create_app():
     def create_task():
         data = request.get_json(silent=True) or {}
         title = data.get("title")
-        if not title:
-            return jsonify({"error": "El campo 'title' es obligatorio"}), 400
+        if not isinstance(title, str) or not title.strip():
+            return jsonify({"error": "El campo 'title' es obligatorio y debe ser texto"}), 400
 
-        task = db.create_task(title, bool(data.get("done", False)))
+        task = db.create_task(title.strip(), bool(data.get("done", False)))
         return jsonify(task), 201
 
     return app
