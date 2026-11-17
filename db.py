@@ -45,6 +45,9 @@ def cursor():
 
 def init_db():
     with cursor() as cur:
+        # Cada worker de gunicorn corre esto al arrancar; sin el lock, dos CREATE TABLE
+        # simultáneos chocan en el catálogo de PostgreSQL aunque usen IF NOT EXISTS
+        cur.execute("SELECT pg_advisory_xact_lock(1)")
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS tasks (
