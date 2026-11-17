@@ -23,6 +23,16 @@ output "db_secret_name" {
   value       = aws_secretsmanager_secret.db.name
 }
 
+output "dashboard_url" {
+  description = "Dashboard de CloudWatch con las 3 métricas"
+  value       = "https://${var.region}.console.aws.amazon.com/cloudwatch/home?region=${var.region}#dashboards/dashboard/${aws_cloudwatch_dashboard.main.dashboard_name}"
+}
+
+output "sns_topic_arn" {
+  description = "Tópico de SNS al que notifican las alarmas"
+  value       = aws_sns_topic.alerts.arn
+}
+
 output "private_key_pem" {
   description = "Llave privada para conectarse a la EC2 por SSH"
   value       = tls_private_key.ssh.private_key_pem

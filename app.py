@@ -1,18 +1,44 @@
 import os
+from datetime import datetime, timezone
 
+import psycopg2
 from flask import Flask, jsonify, request
 
 import db
+import metrics
+
+
+def get_version():
+    # La versión la define el despliegue (tag del release) en una variable de ambiente
+    return os.environ.get("APP_VERSION", "dev")
 
 
 def create_app():
     app = Flask(__name__)
     db.init_db()
 
+    @app.errorhandler(psycopg2.Error)
+    def database_error(error):
+        return jsonify({"error": "No se pudo acceder a la base de datos"}), 503
+
     @app.get("/version")
     def version():
-        # La versión la define el despliegue (tag del release) en una variable de ambiente
-        return jsonify({"version": os.environ.get("APP_VERSION", "dev")})
+        return jsonify({"version": get_version()})
+
+    @app.get("/health")
+    def health():
+        try:
+            db.ping()
+            database = "OK"
+        except psycopg2.Error:
+            database = "FAIL"
+
+        body = {
+            "database": database,
+            "version": get_version(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        return jsonify(body), 200 if database == "OK" else 503
 
     @app.get("/tasks")
     def list_tasks():
@@ -26,6 +52,7 @@ def create_app():
             return jsonify({"error": "El campo 'title' es obligatorio y debe ser texto"}), 400
 
         task = db.create_task(title.strip(), bool(data.get("done", False)))
+        metrics.put_count("TasksCreated")
         return jsonify(task), 201
 
     return app
