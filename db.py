@@ -1,3 +1,4 @@
+import contextlib
 import functools
 import json
 import os
@@ -5,6 +6,8 @@ import os
 import boto3
 import psycopg2
 from psycopg2.extras import RealDictCursor
+
+import metrics
 
 
 @functools.cache
@@ -24,11 +27,24 @@ def get_connection():
         user=config["username"],
         password=config["password"],
         cursor_factory=RealDictCursor,
+        # Sin límite, una base apagada deja la petición colgada hasta que gunicorn la mata
+        connect_timeout=5,
     )
 
 
+@contextlib.contextmanager
+def cursor():
+    # Toda lectura o escritura pasa por aquí, así cada error de RDS queda contado
+    try:
+        with contextlib.closing(get_connection()) as conn, conn, conn.cursor() as cur:
+            yield cur
+    except psycopg2.Error:
+        metrics.put_count("DatabaseErrors")
+        raise
+
+
 def init_db():
-    with get_connection() as conn, conn.cursor() as cur:
+    with cursor() as cur:
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS tasks (
@@ -40,14 +56,19 @@ def init_db():
         )
 
 
+def ping():
+    with cursor() as cur:
+        cur.execute("SELECT 1")
+
+
 def list_tasks():
-    with get_connection() as conn, conn.cursor() as cur:
+    with cursor() as cur:
         cur.execute("SELECT id, title, done FROM tasks ORDER BY id")
         return cur.fetchall()
 
 
 def create_task(title, done):
-    with get_connection() as conn, conn.cursor() as cur:
+    with cursor() as cur:
         cur.execute(
             "INSERT INTO tasks (title, done) VALUES (%s, %s) RETURNING id, title, done",
             (title, done),

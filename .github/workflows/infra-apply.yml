@@ -24,6 +24,9 @@ jobs:
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
 
       - name: terraform apply
+        env:
+          # El correo vive en un secret para no publicarlo en el repo
+          TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
         run: terraform apply -auto-approve -input=false
 
       # GITHUB_TOKEN no puede escribir secrets, por eso se usa un PAT
@@ -39,9 +42,15 @@ jobs:
         run: |
           IP=$(terraform output -raw server_public_ip)
           for i in $(seq 1 60); do
-            if VERSION=$(curl -fs "http://$IP:8000/version"); then
-              echo "API lista: $VERSION"
-              echo "API desplegada en http://$IP:8000 ($VERSION)" >> "$GITHUB_STEP_SUMMARY"
+            if HEALTH=$(curl -fs "http://$IP:8000/health"); then
+              echo "API lista: $HEALTH"
+              {
+                echo "API desplegada en http://$IP:8000"
+                echo ""
+                echo "- /health: \`$HEALTH\`"
+                echo "- Dashboard: $(terraform output -raw dashboard_url)"
+                echo "- Revisa tu correo y confirma la suscripción de SNS para recibir las alarmas"
+              } >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
             sleep 10

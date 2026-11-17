@@ -1,0 +1,39 @@
+name: Health check
+
+on:
+  schedule:
+    # GitHub puede retrasar unos minutos las ejecuciones programadas
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    env:
+      EC2_HOST: ${{ secrets.EC2_HOST }}
+    steps:
+      # Sin infraestructura no hay nada que revisar; no es una falla
+      - name: Verificar que la infraestructura exista
+        id: infra
+        run: |
+          if [ -z "$EC2_HOST" ]; then
+            echo "::notice::No existe el secret EC2_HOST; la infraestructura está apagada."
+            echo "up=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "up=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Consultar /health
+        if: steps.infra.outputs.up == 'true'
+        run: |
+          BODY=$(curl -s -m 15 "http://$EC2_HOST:8000/health") || true
+          echo "Respuesta: $BODY"
+          echo "/health: \`$BODY\`" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$(echo "$BODY" | jq -r .database 2>/dev/null)" != "OK" ]; then
+            echo "::error::La API no está sana (base de datos FAIL o sin respuesta)"
+            exit 1
+          fi

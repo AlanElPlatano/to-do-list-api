@@ -52,6 +52,12 @@ variable "db_name" {
   default     = "todo"
 }
 
+variable "alert_email" {
+  description = "Correo que recibe las alarmas de CloudWatch (vacío = sin suscripción)"
+  type        = string
+  default     = ""
+}
+
 variable "db_username" {
   description = "Usuario administrador de la base de datos"
   type        = string
